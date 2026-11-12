@@ -1,0 +1,7 @@
+.build/
+.build.nosync/
+dist.nosync/
+.DS_Store
+.swiftpm/
+# Private evaluation scripts: they read JJ's meetings and vault.
+tools/

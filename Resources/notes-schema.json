@@ -1,0 +1,169 @@
+{
+ "type": "object",
+ "required": [
+  "project",
+  "suggestedNewProject",
+  "confidence",
+  "reason",
+  "confidential",
+  "title",
+  "subject",
+  "gist",
+  "summary",
+  "decisions",
+  "goals",
+  "actions",
+  "people",
+  "openQuestions"
+ ],
+ "properties": {
+  "project": {
+   "type": "string",
+   "description": "Exact name of an existing vault project, or empty string if none fits"
+  },
+  "suggestedNewProject": {
+   "type": "string",
+   "description": "If no existing project fits, a short folder-style name for the topic or client. Otherwise empty."
+  },
+  "confidence": {
+   "type": "number",
+   "description": "0 to 1: how sure you are about the project"
+  },
+  "reason": {
+   "type": "string",
+   "description": "One sentence explaining the project choice"
+  },
+  "confidential": {
+   "type": "boolean",
+   "description": "True for line-management 1-2-1s, HR, pay, performance or personal matters about a named colleague"
+  },
+  "title": {
+   "type": "string",
+   "description": "Clear meeting title in sentence case, under 60 characters"
+  },
+  "subject": {
+   "type": "string",
+   "description": "What the meeting is about, 1 to 4 words, naming the client and workstream"
+  },
+  "gist": {
+   "type": "string",
+   "description": "One sentence, under 20 words: the main outcome for the user"
+  },
+  "summary": {
+   "type": "string",
+   "description": "Markdown bullet list, 3 to 6 bullets, plain British English"
+  },
+  "decisions": {
+   "type": "array",
+   "items": {
+    "type": "string"
+   }
+  },
+  "goals": {
+   "type": "array",
+   "description": "1 to 4 outcomes the meeting is working towards. Group every action under one.",
+   "items": {
+    "type": "object",
+    "required": [
+     "key",
+     "title",
+     "why",
+     "stated"
+    ],
+    "properties": {
+     "key": {
+      "type": "string",
+      "description": "Short id like g1"
+     },
+     "title": {
+      "type": "string",
+      "description": "The outcome, 3 to 8 words"
+     },
+     "why": {
+      "type": "string",
+      "description": "One short sentence on why it matters"
+     },
+     "stated": {
+      "type": "boolean",
+      "description": "True if the meeting explicitly set this goal; false if you inferred it"
+     }
+    },
+    "additionalProperties": false
+   }
+  },
+  "actions": {
+   "type": "array",
+   "items": {
+    "type": "object",
+    "required": [
+     "goalKey",
+     "headline",
+     "text",
+     "owner",
+     "attribution",
+     "stated",
+     "due",
+     "dueStated",
+     "time"
+    ],
+    "properties": {
+     "goalKey": {
+      "type": "string"
+     },
+     "headline": {
+      "type": "string",
+      "description": "3 to 7 words, starts with a verb, names the specific thing and the client or workstream so it makes sense out of context"
+     },
+     "text": {
+      "type": "string",
+      "description": "One sentence, specific enough to act on without the meeting"
+     },
+     "owner": {
+      "type": "string",
+      "description": "Full name of the person responsible if explicit; empty if unclear"
+     },
+     "attribution": {
+      "type": "string",
+      "enum": [
+       "me",
+       "other",
+       "unassigned"
+      ],
+      "description": "me ONLY if the notes explicitly give it to the user; other if they explicitly name someone else; otherwise unassigned"
+     },
+     "stated": {
+      "type": "boolean",
+      "description": "True if agreed in the meeting; false if it is your suggestion"
+     },
+     "due": {
+      "type": "string",
+      "description": "YYYY-MM-DD deadline if one was stated or clearly implied, else empty"
+     },
+     "dueStated": {
+      "type": "boolean",
+      "description": "True if the deadline came from the meeting"
+     },
+     "time": {
+      "type": "string",
+      "description": "HH:MM 24h only if a specific time was stated, else empty"
+     }
+    },
+    "additionalProperties": false
+   }
+  },
+  "people": {
+   "type": "array",
+   "items": {
+    "type": "string"
+   },
+   "description": "People who took part or own actions, excluding the user. Full names where known."
+  },
+  "openQuestions": {
+   "type": "array",
+   "items": {
+    "type": "string"
+   }
+  }
+ },
+ "additionalProperties": false
+}
