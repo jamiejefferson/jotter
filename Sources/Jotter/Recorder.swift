@@ -291,7 +291,7 @@ final class Recorder: ObservableObject {
                 return
             }
             let info: [String: Any] = [
-                "app": "Jotter 0.7.0", "kind": kind.rawValue, "label": label,
+                "app": "Jotter 0.7.1", "kind": kind.rawValue, "label": label,
                 "startedAt": Store.iso(startedAt), "endedAt": Store.iso(endedAt),
                 "seconds": endedAt.timeIntervalSince(startedAt).rounded(),
                 "microphone": micName, "tracks": tracks,

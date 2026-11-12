@@ -26,10 +26,24 @@ enum Theme {
     static let subtleOn = Color.white.opacity(0.14)
     static let groundNS = NSColor(srgbRed: 0x11 / 255, green: 0x11 / 255, blue: 0x11 / 255, alpha: 1)
 
-    /// Geist when installed (it is on JJ's Mac), else the system font.
-    static func font(_ size: CGFloat, _ weight: Font.Weight = .regular) -> Font {
-        NSFont(name: "Geist", size: size) != nil ? .custom("Geist", size: size).weight(weight) : .system(size: size, weight: weight)
+    /// Registers the Geist fonts shipped inside the app, so the layout holds on Macs that
+    /// don't have Geist installed. Call once at launch, before any view draws.
+    static func registerFonts() {
+        guard let dir = Bundle.main.resourceURL?.appendingPathComponent("Fonts"),
+              let files = try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil) else { return }
+        for url in files where url.pathExtension == "ttf" {
+            // Fails harmlessly with "already registered" where Geist is also installed.
+            CTFontManagerRegisterFontsForURL(url as CFURL, .process, nil)
+        }
     }
+
+    /// Geist, shipped in the app; the system font only if those files are missing.
+    static func font(_ size: CGFloat, _ weight: Font.Weight = .regular) -> Font {
+        hasGeist ? .custom("Geist", size: size).weight(weight) : .system(size: size, weight: weight)
+    }
+
+    /// Checked by family, which the bundled static files and an installed copy both provide.
+    private static let hasGeist = NSFontManager.shared.availableFontFamilies.contains("Geist")
 
     // Type scale from Canon's style sheet.
     static let h1 = font(28, .medium)          // Canon h1 is 40px; scaled for a window

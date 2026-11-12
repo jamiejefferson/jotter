@@ -19,6 +19,7 @@ cp "$BIN" "$APP/Contents/MacOS/Jotter"
 cp Resources/Info.plist "$APP/Contents/Info.plist"
 cp Resources/notes-schema.json "$APP/Contents/Resources/notes-schema.json"
 cp Resources/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
+cp -R Resources/Fonts "$APP/Contents/Resources/Fonts"
 xattr -cr "$APP" 2>/dev/null || true
 
 # A stable signing identity keeps microphone and audio permissions across rebuilds.

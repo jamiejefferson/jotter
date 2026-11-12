@@ -3,6 +3,7 @@ import SwiftUI
 @main
 enum Entry {
     static func main() {
+        Theme.registerFonts()
         if CommandLine.arguments.dropFirst().first == "--file-check", CommandLine.arguments.count > 3 {
             MainActor.assumeIsolated { FileCheck.run(recording: URL(fileURLWithPath: CommandLine.arguments[2]), folder: URL(fileURLWithPath: CommandLine.arguments[3])) }
             return
@@ -14,7 +15,8 @@ enum Entry {
         }
         if SelfTest.run(CommandLine.arguments) { return }
         if Transcribe.run(CommandLine.arguments) { return }
-        for (flag, name) in [("--show-settings", "com.eqtr.jotter.showSettings"), ("--show-feedback", "com.eqtr.jotter.showFeedback")]
+        for (flag, name) in [("--show-settings", "com.eqtr.jotter.showSettings"), ("--show-feedback", "com.eqtr.jotter.showFeedback"),
+                             ("--check-update", "com.eqtr.jotter.checkUpdate"), ("--install-update", "com.eqtr.jotter.installUpdate")]
         where CommandLine.arguments.dropFirst().first == flag {
             DistributedNotificationCenter.default().postNotificationName(Notification.Name(name), object: nil, deliverImmediately: true)
             return
@@ -33,11 +35,15 @@ struct JotterApp: App {
     @MainActor static let dictation = Dictation()
     @ObservedObject private var recorder = JotterApp.recorder
     @ObservedObject private var dictation = JotterApp.dictation
+    @ObservedObject private var updater = Updater.shared
 
     init() {
         MeetingsWindow.listen()
+        Updater.shared.start()
         for (name, open) in [("com.eqtr.jotter.showSettings", { @MainActor in JotterApp.showSettings() }),
-                             ("com.eqtr.jotter.showFeedback", { @MainActor in SettingsWindow.feedback.show(FeedbackView()) })] {
+                             ("com.eqtr.jotter.showFeedback", { @MainActor in SettingsWindow.feedback.show(FeedbackView()) }),
+                             ("com.eqtr.jotter.checkUpdate", { @MainActor in Updater.shared.checkNow() }),
+                             ("com.eqtr.jotter.installUpdate", { @MainActor in Updater.shared.install() })] {
             DistributedNotificationCenter.default().addObserver(forName: Notification.Name(name), object: nil, queue: .main) { _ in
                 Task { @MainActor in open() }
             }
@@ -58,6 +64,9 @@ struct JotterApp: App {
                 Text("\(Image(systemName: recorder.paused ? "pause.circle" : "record.circle.fill")) \(Recorder.clock(recorder.elapsed))")
             } else if recorder.saving {
                 Image(systemName: "arrow.down.circle")
+            } else if updater.available != nil {
+                // A dot on the icon says an update is waiting.
+                Image(systemName: "waveform.badge.exclamationmark")
             } else {
                 Image(systemName: "waveform")
             }
@@ -70,6 +79,7 @@ struct JotterApp: App {
 struct PanelView: View {
     @EnvironmentObject var r: Recorder
     @EnvironmentObject var d: Dictation
+    @ObservedObject private var u = Updater.shared
     private func showMeetings() { MeetingsWindow.shared.show() }
 
     var body: some View {
@@ -82,6 +92,7 @@ struct PanelView: View {
             .padding(.horizontal, 24).padding(.top, 20).padding(.bottom, 16)
             Rectangle().fill(Theme.rule).frame(height: 1)
 
+            if let release = u.available { updateCard(release) }
             VStack(alignment: .leading, spacing: 14) {
                 if let kind = r.kind { recording(kind) } else { idle }
 
@@ -119,6 +130,26 @@ struct PanelView: View {
         .background(Theme.ground)
         .frame(width: 360)
         .environment(\.colorScheme, .dark)
+    }
+
+    private func updateCard(_ release: Updater.Release) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                Dot()
+                Text("Jotter \(release.version) is ready").font(Theme.font(14, .semibold))
+                Spacer()
+                Button(u.updating ? "Updating…" : "Update now") { u.install() }
+                    .buttonStyle(PillButtonStyle(primary: true, small: true)).disabled(u.updating)
+            }
+            if !release.notes.isEmpty {
+                Text(release.notes).font(Theme.meta).foregroundStyle(Theme.muted).lineLimit(3).fixedSize(horizontal: false, vertical: true)
+            }
+            if let p = u.problem { Text(p).font(Theme.meta).foregroundStyle(Theme.body).fixedSize(horizontal: false, vertical: true) }
+            Text("You're on \(Updater.current). Jotter closes and reopens in a few seconds.").font(Theme.meta).foregroundStyle(Theme.muted)
+        }
+        .padding(.horizontal, 24).padding(.vertical, 16)
+        .background(Theme.zone)
+        .overlay(alignment: .bottom) { Rectangle().fill(Theme.rule).frame(height: 1) }
     }
 
     private func warning(_ text: String) -> some View {

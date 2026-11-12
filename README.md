@@ -10,7 +10,7 @@ Needs a Mac with Apple silicon and macOS 26 or later. In Terminal:
 curl -fsSL https://raw.githubusercontent.com/jamiejefferson/jotter/main/install.sh | bash
 ```
 
-Run the same command to update. Jotter appears as an icon in the menu bar.
+Jotter appears as an icon in the menu bar. It checks for new versions every few hours: a Mac notification and a card in the panel say when one is ready, and "Update now" installs it and reopens Jotter. It waits if a meeting is recording or its notes are being written.
 
 ## First run
 
@@ -80,6 +80,7 @@ $B --show-meetings | --show-settings | --show-feedback
 | `Transcribe.swift` | On-device transcription of both tracks into one timeline. |
 | `MeetingNotes.swift` | Notes prompt, model call, filing and new projects. |
 | `Dictation.swift` | Hold-to-dictate, tidying, spoken corrections, name fixes. |
+| `Updater.swift` | Checks GitHub releases, notifies, and installs updates in place. |
 | `ModelAccess.swift` | OpenRouter (or KeyBus) connection and key files. |
 | `Profile.swift` | Per-person settings: name, notes folder, calendar. |
 | `WorkCalendar.swift` | Optional match to a calendar invite through the Composio CLI. |
