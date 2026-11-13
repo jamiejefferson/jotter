@@ -25,6 +25,7 @@ Jotter appears as an icon in the menu bar. It checks for new versions every few 
 - **Dictate:** hold right ⌘, speak, let go. The words are pasted where you were typing. Hold Shift too to say a correction, such as "change Thursday to Friday" or "scratch that".
 - **Meeting:** double-tap right ⌘ to start and stop (or ⌃⌥⌘J). A small bar shows the time, a project menu, Pause (⌃⌥⌘P) and Stop. When you stop, the bar shows progress and then "Notes ready" with a View button.
 - **Voice note:** ⌃⌥⌘N records your mic only.
+- **Call prompt:** when Teams, Zoom, FaceTime or a browser call has used the microphone for 15 seconds and Jotter isn't recording, a notification asks "Jot notes for this meeting?". Click it (or Record) to start. If you're recording and the call app lets go of the microphone for 45 seconds, a second notification offers to stop and write the notes. Dictation apps, Voice Memos and Granola don't trigger it. Turn it off in Settings › General.
 - **Meetings window:** every meeting with its notes and transcript. "Filed in" moves a note to another project folder, or makes a new one.
 - The key can be changed in Settings (right ⌘, right ⌥, right ⌃ or Fn).
 
@@ -67,6 +68,7 @@ $B --selftest-correct "<text>" "<instruction>"
 $B --selftest-notes <recording>      # writes and files notes for a recording
 $B --transcribe <recording>          # transcribes a recording on the Mac
 $B --render-check <folder>           # renders the wordmark and controls to PNGs
+$B --mic-users [pid]                 # apps using the microphone now, or the app that owns a process
 $B --show-meetings | --show-settings | --show-feedback
 ```
 
@@ -81,6 +83,7 @@ $B --show-meetings | --show-settings | --show-feedback
 | `MeetingNotes.swift` | Notes prompt, model call, filing and new projects. |
 | `Dictation.swift` | Hold-to-dictate, tidying, spoken corrections, name fixes. |
 | `Updater.swift` | Checks GitHub releases, notifies, and installs updates in place. |
+| `CallWatcher.swift` | Notices a call app using the microphone and offers to start or stop a recording; owns all Jotter notifications and their buttons. |
 | `ModelAccess.swift` | OpenRouter (or KeyBus) connection and key files. |
 | `Profile.swift` | Per-person settings: name, notes folder, calendar. |
 | `WorkCalendar.swift` | Optional match to a calendar invite through the Composio CLI. |

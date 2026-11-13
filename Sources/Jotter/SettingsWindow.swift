@@ -52,6 +52,8 @@ struct SettingsView: View {
                 }
                 section("General") {
                     Toggle("Open at login", isOn: $r.openAtLogin).toggleStyle(.checkbox).font(Theme.secondary)
+                    Toggle("Suggest recording when a call starts", isOn: $p.suggestRecording).toggleStyle(.checkbox).font(Theme.secondary)
+                    hint("When Teams, Zoom or a browser call has used the microphone for 15 seconds, Jotter asks once whether to record. When the call ends, it offers to stop and write the notes.")
                 }
             }
             .padding(.vertical, 8)
@@ -108,6 +110,7 @@ final class ProfileModel: ObservableObject {
     @Published var aka = Profile.alsoKnownAs { didSet { Profile.alsoKnownAs = aka } }
     @Published var about = Profile.about { didSet { Profile.about = about } }
     @Published var folder = Profile.notesFolder { didSet { Profile.notesFolder = folder } }
+    @Published var suggestRecording = CallWatcher.enabled { didSet { CallWatcher.enabled = suggestRecording } }
 }
 
 /// Sends feedback to Supabase, where JJ reads and triages it.

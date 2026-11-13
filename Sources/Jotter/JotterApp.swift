@@ -8,6 +8,14 @@ enum Entry {
             MainActor.assumeIsolated { FileCheck.run(recording: URL(fileURLWithPath: CommandLine.arguments[2]), folder: URL(fileURLWithPath: CommandLine.arguments[3])) }
             return
         }
+        if CommandLine.arguments.dropFirst().first == "--mic-users" {
+            MainActor.assumeIsolated {
+                if let pid = CommandLine.arguments.dropFirst(2).first.flatMap({ pid_t($0) }) {
+                    let o = CallWatcher.owner(pid: pid, bundleID: ""); print(o.id ?? "-", "|", o.name, o.system ? "(system, ignored)" : "")
+                } else { for u in CallWatcher.micUsers() { print(u.key, "|", u.name) } }
+            }
+            return
+        }
         if CommandLine.arguments.dropFirst().first == "--render-check", CommandLine.arguments.count > 2 {
             // Renders the wordmark and controls to PNGs for a visual check.
             MainActor.assumeIsolated { RenderCheck.run(to: URL(fileURLWithPath: CommandLine.arguments[2])) }
@@ -39,7 +47,9 @@ struct JotterApp: App {
 
     init() {
         MeetingsWindow.listen()
+        Notifier.shared.install()
         Updater.shared.start()
+        CallWatcher.shared.start()
         for (name, open) in [("com.eqtr.jotter.showSettings", { @MainActor in JotterApp.showSettings() }),
                              ("com.eqtr.jotter.showFeedback", { @MainActor in SettingsWindow.feedback.show(FeedbackView()) }),
                              ("com.eqtr.jotter.checkUpdate", { @MainActor in Updater.shared.checkNow() }),

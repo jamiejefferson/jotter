@@ -6,7 +6,7 @@ import UserNotifications
 /// swap the app and reopen. It never swaps while a meeting is recording or its notes are
 /// still being written.
 @MainActor
-final class Updater: NSObject, ObservableObject, UNUserNotificationCenterDelegate {
+final class Updater: ObservableObject {
     static let shared = Updater()
     static let repo = "jamiejefferson/jotter"
 
@@ -19,11 +19,10 @@ final class Updater: NSObject, ObservableObject, UNUserNotificationCenterDelegat
     private var timer: Timer?
     private var pendingInstall = false
 
-    static var current: String { Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0" }
+    nonisolated static var current: String { Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0" }
 
     /// Starts checking: shortly after launch, then every four hours.
     func start() {
-        UNUserNotificationCenter.current().delegate = self
         DispatchQueue.main.asyncAfter(deadline: .now() + 20) { Task { await self.check() } }
         timer = Timer.scheduledTimer(withTimeInterval: 4 * 3600, repeats: true) { _ in
             Task { @MainActor in await Updater.shared.check() }
@@ -64,18 +63,11 @@ final class Updater: NSObject, ObservableObject, UNUserNotificationCenterDelegat
             let c = UNMutableNotificationContent()
             c.title = "Jotter \(version) is ready"
             c.body = "Click to update. Jotter reopens in a few seconds."
+            c.categoryIdentifier = Notifier.update
             let r = UNNotificationRequest(identifier: "jotter-update-\(version)", content: c, trigger: nil)
             center.add(r)
             DispatchQueue.main.async { UserDefaults.standard.set(version, forKey: key) }
         }
-    }
-
-    nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse) async {
-        await MainActor.run { Updater.shared.install() }
-    }
-
-    nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification) async -> UNNotificationPresentationOptions {
-        [.banner, .sound]
     }
 
     /// True while a recording or its notes would be lost by restarting.
