@@ -197,6 +197,14 @@ final class Dictation: ObservableObject {
     private var recentDictations: [String] = []
     private let hud = DictationHUD()
     private var trustTimer: Timer?
+    /// When the key monitors last delivered any event, and how many since the last heartbeat.
+    /// The watchdog compares this with the Mac's own record of key presses to notice when
+    /// macOS has stopped sending Jotter events, as happened on 2026-11-16.
+    private var lastEventAt = Date()
+    private var eventsSinceBeat = 0
+    private var lastBeat = Date()
+    private var lastReinstall = Date.distantPast
+    private var watchdog: Timer?
 
     init() {
         guard #available(macOS 26.0, *) else {
@@ -214,6 +222,41 @@ final class Dictation: ObservableObject {
         }
         // Ask once at launch: macOS shows its own prompt and adds Jotter to the Accessibility list.
         if !trusted { askForAccessibility() }
+        KeyLog.write("launch: Jotter \(Updater.current), accessibility=\(trusted), key=\(holdKey.rawValue)")
+        watchdog = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { _ in
+            Task { @MainActor [weak self] in self?.checkMonitors() }
+        }
+    }
+
+    /// Runs every 5 s. If the Mac saw a key or modifier press in the last few seconds but
+    /// Jotter's monitors have heard nothing for much longer, macOS has stopped delivering
+    /// events to Jotter: log it and install the monitors again. Also clears a press that
+    /// never got its release, which would make every later press be ignored.
+    private func checkMonitors() {
+        let now = Date()
+        let sinceKey = min(CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: .keyDown),
+                           CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: .flagsChanged))
+        let heardAgo = now.timeIntervalSince(lastEventAt)
+        if sinceKey < 5, heardAgo > sinceKey + 20, now.timeIntervalSince(lastReinstall) > 60 {
+            lastReinstall = now
+            KeyLog.write("deaf: the Mac had a key press \(Int(sinceKey)) s ago but Jotter last heard one \(Int(heardAgo)) s ago; accessibility=\(AXIsProcessTrusted()). Reinstalling the key monitors.")
+            installMonitors()
+        }
+        if let pressedAt, now.timeIntervalSince(pressedAt) > 120,
+           CGEventSource.flagsState(.combinedSessionState).rawValue & UInt64(holdKey.flag) == 0 {
+            KeyLog.write("stuck: a press from \(Int(now.timeIntervalSince(pressedAt))) s ago never got its release; clearing it")
+            self.pressedAt = nil
+            mic.stop()
+            if #available(macOS 26.0, *) { (session as? DictationSession)?.cancel() }
+            session = nil
+            state = .ready
+            hud.hide()
+        }
+        if now.timeIntervalSince(lastBeat) >= 1800 {
+            KeyLog.write("heartbeat: \(eventsSinceBeat) events in \(Int(now.timeIntervalSince(lastBeat) / 60)) min, accessibility=\(AXIsProcessTrusted()), state=\(state), monitors=\(monitors.count)")
+            eventsSinceBeat = 0
+            lastBeat = now
+        }
     }
 
     func openTidyingInstructions() {
@@ -257,21 +300,27 @@ final class Dictation: ObservableObject {
         let mask: NSEvent.EventTypeMask = [.flagsChanged, .keyDown, .leftMouseDown]
         if let g = NSEvent.addGlobalMonitorForEvents(matching: mask, handler: handler) { monitors.append(g) }
         if let l = NSEvent.addLocalMonitorForEvents(matching: mask, handler: { e in handler(e); return e }) { monitors.append(l) }
+        KeyLog.write("monitors installed: \(monitors.count) of 2, accessibility=\(AXIsProcessTrusted())")
     }
 
     private func handle(_ e: NSEvent) {
+        lastEventAt = Date()
+        eventsSinceBeat += 1
         switch e.type {
         case .flagsChanged where e.keyCode == holdKey.keyCode:
             if e.modifierFlags.rawValue & holdKey.flag != 0 {
                 if let lastTapAt, Date().timeIntervalSince(lastTapAt) < Self.doubleTapGap, !e.modifierFlags.contains(.shift) {
                     // Second tap: start or stop a meeting, and don't dictate.
+                    KeyLog.write("double-tap: toggling the meeting recording")
                     self.lastTapAt = nil
                     swallowRelease = true
                     NotificationCenter.default.post(name: .jotterToggleMeeting, object: nil)
                     return
                 }
+                KeyLog.write("key down\(e.modifierFlags.contains(.shift) ? " with shift" : "") in \(NSWorkspace.shared.frontmostApplication?.bundleIdentifier ?? "?"), state=\(state)")
                 press(correct: e.modifierFlags.contains(.shift))
             } else {
+                KeyLog.write("key up")
                 if swallowRelease { swallowRelease = false; return }
                 release()
             }
@@ -297,6 +346,7 @@ final class Dictation: ObservableObject {
 
     /// The press is a shortcut: drop the mic and the pill straight away.
     private func spoil() {
+        KeyLog.write("spoiled: another key or a click came while holding, so it's a shortcut")
         spoiled = true
         mic.stop()
         if #available(macOS 26.0, *) { (session as? DictationSession)?.cancel() }
@@ -306,7 +356,11 @@ final class Dictation: ObservableObject {
     }
 
     private func press(correct: Bool = false) {
-        guard #available(macOS 26.0, *), pressedAt == nil else { return }
+        guard #available(macOS 26.0, *) else { return }
+        if let pressedAt {
+            KeyLog.write("press ignored: an earlier press from \(String(format: "%.1f", Date().timeIntervalSince(pressedAt))) s ago is still open")
+            return
+        }
         let at = Date()
         pressedAt = at
         spoiled = false
@@ -319,12 +373,17 @@ final class Dictation: ObservableObject {
     }
 
     private func listen() {
-        guard #available(macOS 26.0, *), let setup = setupBox as? DictationSession.Setup else { return }
+        guard #available(macOS 26.0, *), let setup = setupBox as? DictationSession.Setup else {
+            KeyLog.write("not listening: the speech engine isn't ready (state=\(state))")
+            return
+        }
         let s = DictationSession(setup)
         session = s
         do {
             try mic.start { buf in s.feed(buf) }
+            KeyLog.write("listening")
         } catch {
+            KeyLog.write("mic failed: \(error.localizedDescription)")
             message = error.localizedDescription
             s.cancel(); session = nil; pressedAt = nil
             return
@@ -346,6 +405,7 @@ final class Dictation: ObservableObject {
         let session = self.session as? DictationSession
         self.session = nil
         mic.stop()
+        KeyLog.write(String(format: "released after %.2f s%@", held, spoiled ? " (spoiled)" : session == nil ? " (no session)" : ""))
         guard let s = session, !spoiled, held >= Self.minimumHold else {
             if !spoiled && !correcting && held < Self.minimumHold { lastTapAt = releasedAt }
             session?.cancel()
@@ -511,6 +571,29 @@ enum DictationLog {
             h.seekToEndOfFile(); h.write(data + Data("\n".utf8)); try? h.close()
         } else {
             try? (data + Data("\n".utf8)).write(to: url)
+        }
+    }
+}
+
+// MARK: - Key log
+
+/// What the dictation key did, to find where a press goes missing. It records the hold key,
+/// Jotter's decisions and event counts, never which other keys were typed. Stays on this Mac
+/// at `~/Library/Application Support/Jotter/keys.log` and keeps about the last 400 KB.
+enum KeyLog {
+    static var file: URL { Store.recordings.deletingLastPathComponent().appendingPathComponent("keys.log") }
+
+    static func write(_ line: String) {
+        let row = Data("\(ISO8601DateFormatter().string(from: Date())) \(line)\n".utf8)
+        let url = file
+        if let size = (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? Int) ?? nil, size > 400_000,
+           let data = try? Data(contentsOf: url) {
+            try? data.suffix(200_000).write(to: url)
+        }
+        if let h = try? FileHandle(forWritingTo: url) {
+            h.seekToEndOfFile(); h.write(row); try? h.close()
+        } else {
+            try? row.write(to: url)
         }
     }
 }

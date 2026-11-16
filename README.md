@@ -36,6 +36,7 @@ Notes go to `<notes folder>/Projects/<project>/Meetings/`, or `<notes folder>/Me
 - Audio and transcripts stay on your Mac. Transcription uses Apple's on-device speech engine.
 - Transcripts are sent to a model through OpenRouter to write notes, and dictated text is sent to tidy it (Tidy setting only). Jotter asks OpenRouter to use only providers that neither store nor train on what is sent.
 - Recordings are in `~/Library/Application Support/Jotter/Recordings/`. Your OpenRouter key is in `~/Library/Application Support/Jotter/Keys/`, readable only by your Mac user.
+- `keys.log` in the same folder records what the dictation key did (pressed, released, listening, or why a press was ignored) so a missed press can be traced. It never records which other keys you type.
 - Feedback sends only what you type, with Jotter's and macOS's version numbers, and your name if you tick the box.
 
 ## Feedback
