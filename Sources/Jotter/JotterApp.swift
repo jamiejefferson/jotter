@@ -21,6 +21,37 @@ enum Entry {
             MainActor.assumeIsolated { RenderCheck.run(to: URL(fileURLWithPath: CommandLine.arguments[2])) }
             return
         }
+        if CommandLine.arguments.dropFirst().first == "--brief-check", CommandLine.arguments.count > 2 {
+            // Jotter --brief-check <project> [invite title]: prints what the call brief would show.
+            MainActor.assumeIsolated { BriefCheck.run(project: CommandLine.arguments[2], invite: CommandLine.arguments.dropFirst(3).first) }
+            return
+        }
+        if CommandLine.arguments.dropFirst().first == "--agenda-check" {
+            // Jotter --agenda-check: today's calendar meetings and the project each one matches.
+            MainActor.assumeIsolated {
+                guard let id = CommandLine.arguments.dropFirst(2).first ?? Profile.calendarId else { print("no calendar set"); return }
+                UserDefaults.standard.set(id, forKey: "calendarId")
+                let now = Date()
+                let events = WorkCalendar.list(from: now.addingTimeInterval(-3 * 3600), to: now.addingTimeInterval(12 * 3600))
+                print("\(events.count) meetings between 3 hours ago and 12 hours ahead")
+                for e in events { print("  \(PromptCard.time(e.start)) \(e.title.prefix(50)) -> \(ProjectMatch.project(forInvite: e.title) ?? "no match")\(Agenda.isMeeting(e) ? ", raises the card" : ", no card")") }
+            }
+            return
+        }
+        if CommandLine.arguments.dropFirst().first == "--brief-tick-check", CommandLine.arguments.count > 2 {
+            // Jotter --brief-tick-check <note.md>: ticks items in a copy of the note and shows what changed.
+            MainActor.assumeIsolated { BriefCheck.ticks(note: URL(fileURLWithPath: CommandLine.arguments[2])) }
+            return
+        }
+        if CommandLine.arguments.dropFirst().first == "--preview-brief", CommandLine.arguments.count > 3 {
+            // Jotter --preview-brief <project> card|waiting|bar|panel [seconds]: shows one surface
+            // of the call brief with real notes, without recording anything.
+            MainActor.assumeIsolated {
+                BriefCheck.preview(project: CommandLine.arguments[2], surface: CommandLine.arguments[3],
+                                   seconds: CommandLine.arguments.dropFirst(4).first.flatMap(Double.init) ?? 30)
+            }
+            return
+        }
         if SelfTest.run(CommandLine.arguments) { return }
         if Transcribe.run(CommandLine.arguments) { return }
         for (flag, name) in [("--show-settings", "com.eqtr.jotter.showSettings"), ("--show-feedback", "com.eqtr.jotter.showFeedback"),
@@ -346,5 +377,79 @@ enum RenderCheck {
                 print(dir.appendingPathComponent("\(name).png").path)
             }
         }
+    }
+}
+
+/// Development checks for the call brief.
+@MainActor
+enum BriefCheck {
+    static func run(project: String, invite: String?) {
+        if let invite { print("invite \"\(invite)\" matches: \(ProjectMatch.project(forInvite: invite) ?? "nothing")") }
+        let b = Brief.load(project: project)
+        print("\(b.notes.count) notes, last met \(b.lastMet.map(BriefPanel.day) ?? "never")")
+        print("Open questions (\(b.questions.count)):")
+        for q in b.questions { print("  ○ \(q.text)   [\(q.note.lastPathComponent)]") }
+        print("Actions to chase (\(b.actions.count)):")
+        for a in b.actions { print("  ○ \(a.text)   \(a.owner) · \(a.due)") }
+        let key = Brief.briefingKey(b, invite: invite ?? "")
+        let done = DispatchSemaphore(value: 0)
+        Task {
+            let t0 = Date()
+            let br = await Brief.writeBriefing(project: project, loaded: b, inviteTitle: invite ?? "", inviteAbout: "", key: key)
+            print(String(format: "Briefing (%.1f s):", Date().timeIntervalSince(t0)))
+            if let br { print("  Today: \(br.aim)"); br.points.forEach { print("  • \($0)") } } else { print("  none") }
+            done.signal()
+        }
+        while done.wait(timeout: .now()) == .timedOut { RunLoop.current.run(until: Date().addingTimeInterval(0.05)) }
+    }
+
+    /// Works on a copy, so the real note is untouched.
+    static func ticks(note: URL) {
+        let copy = FileManager.default.temporaryDirectory.appendingPathComponent("jotter-tick-check-\(note.lastPathComponent)")
+        try? FileManager.default.removeItem(at: copy)
+        guard (try? FileManager.default.copyItem(at: note, to: copy)) != nil, let before = try? String(contentsOf: copy, encoding: .utf8) else { print("can't read the note"); return }
+        let items = Brief.parse(Brief.Note(url: copy, date: nil, text: before))
+        var ok = true
+        for kind in [BriefItem.Kind.question, .action] {
+            guard let item = items.first(where: { $0.kind == kind && !$0.done }) else { print("no open \(kind) to tick"); continue }
+            guard let ticked = Brief.setDone(item, true) else { print("FAILED to tick: \(item.line)"); ok = false; continue }
+            print("ticked:   \(item.line.prefix(90))\n   now:   \(ticked.prefix(90))")
+            let again = Brief.parse(Brief.Note(url: copy, date: nil, text: (try? String(contentsOf: copy, encoding: .utf8)) ?? ""))
+            if again.contains(where: { $0.line == ticked && !$0.done }) || Brief.load(project: "").questions.count != 0 { ok = false }
+            let open = again.filter { $0.kind == kind && !$0.done }.count, was = items.filter { $0.kind == kind && !$0.done }.count
+            print("   open \(kind)s: \(was) -> \(open)")
+            if open != was - 1 { ok = false }
+        }
+        let after = (try? String(contentsOf: copy, encoding: .utf8)) ?? ""
+        let changed = zip(before.components(separatedBy: "\n"), after.components(separatedBy: "\n")).filter { $0 != $1 }.count
+        print("lines changed in the note: \(changed) of \(before.components(separatedBy: "\n").count)")
+        // Writing the note again from scratch keeps the ticks.
+        let carried = Brief.carryTicks(from: after, into: before)
+        print("ticks carried into a fresh copy: \(carried == after ? "yes" : "NO")")
+        // Unticking puts the note back exactly.
+        for item in Brief.parse(Brief.Note(url: copy, date: nil, text: after)).filter({ $0.done }) {
+            if !items.contains(where: { $0.id == item.id && $0.done }) { _ = Brief.setDone(item, false) }
+        }
+        let restored = (try? String(contentsOf: copy, encoding: .utf8)) ?? ""
+        print("unticking restores the note: \(restored == before ? "yes" : "NO")")
+        try? FileManager.default.removeItem(at: copy)
+        print(ok && carried == after && restored == before ? "PASS" : "FAIL")
+    }
+
+    static func preview(project: String, surface: String, seconds: Double) {
+        let app = NSApplication.shared
+        app.setActivationPolicy(.accessory)
+        let recorder = Recorder(preview: true)
+        switch surface {
+        case "card", "waiting":
+            let start = Date().addingTimeInterval(4 * 60)
+            PromptCard.shared.ask(event: WorkCalendar.Event(title: "\(project.replacingOccurrences(of: "-", with: " ")) weekly", start: start,
+                                                             end: start.addingTimeInterval(1800), invitees: [], description: ""), app: nil)
+            if surface == "waiting" { PromptCard.shared.startAtInvite() }
+        default:
+            recorder.previewRecording(project: project, open: surface == "panel")
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + seconds) { exit(0) }
+        app.run()
     }
 }

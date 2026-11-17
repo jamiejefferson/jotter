@@ -20,6 +20,7 @@ enum Theme {
     static let accent = Color(hex: 0xFF0055)
     static let dot = accent
     static let redText = accent                // the brand red itself, never a tint (4.7:1 on the ground)
+    static let accentText = Color(hex: 0xFF5C8A) // the accent lifted for small text that asks for a choice
     /// Quiet fills and hairlines for buttons, fields and pills.
     static let subtleFill = Color.white.opacity(0.06)
     static let subtleLine = Color.white.opacity(0.10)

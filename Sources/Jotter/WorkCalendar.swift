@@ -28,12 +28,15 @@ enum WorkCalendar {
         return best
     }
 
-    static func list(from: Date, to: Date) -> [Event] {
-        guard let calendarId = Profile.calendarId, FileManager.default.isExecutableFile(atPath: composio.path) else { return [] }
+    static func list(from: Date, to: Date) -> [Event] { fetch(from: from, to: to) ?? [] }
+
+    /// Nil when the calendar could not be read, which is different from a day with no meetings.
+    static func fetch(from: Date, to: Date) -> [Event]? {
+        guard let calendarId = Profile.calendarId, FileManager.default.isExecutableFile(atPath: composio.path) else { return nil }
         let iso = ISO8601DateFormatter()
         let args: [String: Any] = ["calendarId": calendarId, "timeMin": iso.string(from: from), "timeMax": iso.string(from: to),
                                    "singleEvents": true, "maxResults": 50]
-        guard let argData = try? JSONSerialization.data(withJSONObject: args), let argText = String(data: argData, encoding: .utf8) else { return [] }
+        guard let argData = try? JSONSerialization.data(withJSONObject: args), let argText = String(data: argData, encoding: .utf8) else { return nil }
         let p = Process()
         p.executableURL = composio
         p.arguments = ["execute", "GOOGLECALENDAR_EVENTS_LIST", "-d", argText]
@@ -41,22 +44,22 @@ enum WorkCalendar {
         let pipe = Pipe()
         p.standardOutput = pipe
         p.standardError = Pipe()
-        do { try p.run() } catch { return [] }
+        do { try p.run() } catch { return nil }
         // Composio can hang on a dropped connection; give up after 30 seconds.
         let deadline = Date().addingTimeInterval(30)
         var out = Data()
         while p.isRunning && Date() < deadline {
             out.append(pipe.fileHandleForReading.availableData)
         }
-        if p.isRunning { p.terminate(); return [] }
+        if p.isRunning { p.terminate(); return nil }
         out.append(pipe.fileHandleForReading.readDataToEndOfFile())
         guard let text = String(data: out, encoding: .utf8), let brace = text.firstIndex(of: "{"),
-              var json = try? JSONSerialization.jsonObject(with: Data(text[brace...].utf8)) as? [String: Any] else { return [] }
+              var json = try? JSONSerialization.jsonObject(with: Data(text[brace...].utf8)) as? [String: Any] else { return nil }
         if json["storedInFile"] as? Bool == true, let path = json["outputFilePath"] as? String,
            let d = try? Data(contentsOf: URL(fileURLWithPath: path)), let j = try? JSONSerialization.jsonObject(with: d) as? [String: Any] {
             json = j
         }
-        let items = ((json["data"] as? [String: Any])?["items"] as? [[String: Any]]) ?? []
+        guard let items = (json["data"] as? [String: Any])?["items"] as? [[String: Any]] else { return nil }
         return items.compactMap { e in
             guard let s = (e["start"] as? [String: Any])?["dateTime"] as? String, let start = iso.date(from: s),
                   e["status"] as? String != "cancelled" else { return nil }

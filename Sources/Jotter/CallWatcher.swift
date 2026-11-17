@@ -2,9 +2,9 @@ import AppKit
 import CoreAudio
 import UserNotifications
 
-/// Gently suggests notes for meetings. When another app (Teams, Zoom, a browser on Google
-/// Meet) has held the microphone for a little while and Jotter isn't recording, one
-/// notification asks whether to record. When a recording is running and the call app lets
+/// Gently suggests notes for meetings. A few minutes before a calendar meeting, or when
+/// another app (Teams, Zoom, a browser on Google Meet) has held the microphone for a little
+/// while and Jotter isn't recording, a card asks whether to record. When a recording is running and the call app lets
 /// go of the mic, one notification offers to stop and write the notes.
 @MainActor
 final class CallWatcher {
@@ -35,6 +35,12 @@ final class CallWatcher {
     private var offeredStop = false
     /// The app named in the last "Jot notes?" prompt.
     private var lastPrompted: String?
+    /// Calendar meetings already offered, so each is asked about once.
+    private var offered: Set<String> = []
+    /// The previous check, and the sleep the Mac last woke from.
+    private var lastTick: Date?
+    private var sleptFrom: Date?
+    private var wokeAt: Date?
 
     /// Called when Record is pressed on the prompt, so the end of that call is noticed even
     /// if the call app lets go of the mic before the next check.
@@ -53,13 +59,18 @@ final class CallWatcher {
     private func tick() {
         let users = Self.micUsers()
         let now = Date()
+        // The list a sleeping Mac woke with can be stale, so a meeting missed in sleep is
+        // looked for on each check for a minute after the lid opens.
+        if let l = lastTick, now.timeIntervalSince(l) > 60 { sleptFrom = l; wokeAt = now }
+        lastTick = now
+        let lastCheck = wokeAt.map { now.timeIntervalSince($0) < 60 } == true ? sleptFrom : now
         // Forget apps that let go, so their next call can be asked about again.
         for key in since.keys where !users.contains(where: { $0.key == key }) { since[key] = nil; asked.remove(key) }
         for u in users where since[u.key] == nil { since[u.key] = now }
 
         let recorder = JotterApp.recorder
+        Agenda.shared.refreshIfDue()
         if recorder.isRecording && recorder.kind == .meeting {
-            Notifier.clear(Notifier.callStarted)
             if let u = users.first {
                 callDuringRecording = u.name
                 lastCallSeen = now
@@ -78,16 +89,25 @@ final class CallWatcher {
         if offeredStop { Notifier.clear(Notifier.callEnded) }
         callDuringRecording = nil; lastCallSeen = nil; offeredStop = false
         // Once the call that was asked about has ended, its prompt is stale.
-        if users.isEmpty && lastPrompted != nil { Notifier.clear(Notifier.callStarted); lastPrompted = nil }
+        if users.isEmpty && lastPrompted != nil { PromptCard.shared.withdrawMicPrompt(); lastPrompted = nil }
         guard Self.enabled, !recorder.saving else { return }
+        // A calendar meeting is about to start: offer to record it, once.
+        if PromptCard.shared.stage == .hidden, let e = Agenda.shared.starting(at: now, since: lastCheck) {
+            let key = "\(e.title)|\(e.start.timeIntervalSince1970)"
+            if offered.insert(key).inserted {
+                Notifier.log("card: \(e.title) at \(PromptCard.time(e.start))")
+                PromptCard.shared.ask(event: e, app: nil)
+            }
+        }
         for u in users where !asked.contains(u.key) {
             guard let first = since[u.key], now.timeIntervalSince(first) >= Self.promptAfter else { continue }
             // One prompt per call: apps already on the mic alongside it aren't asked about too.
             asked.formUnion(users.map { $0.key })
+            // A card already up for this meeting covers it.
+            guard PromptCard.shared.stage == .hidden else { break }
             lastPrompted = u.name
-            Notifier.post(id: Notifier.callStarted, title: "Jot notes for this meeting?",
-                          body: "\(u.name) is using your microphone. Jotter can record the call and write the notes.",
-                          category: Notifier.callStarted)
+            Notifier.log("card: \(u.name) is using the microphone")
+            PromptCard.shared.ask(event: Agenda.shared.current(at: now), app: u.name)
             break
         }
     }
@@ -161,7 +181,6 @@ final class CallWatcher {
 @MainActor
 final class Notifier: NSObject, UNUserNotificationCenterDelegate {
     static let shared = Notifier()
-    static let callStarted = "jotter-call-started"
     static let callEnded = "jotter-call-ended"
     static let update = "jotter-update"
 
@@ -174,10 +193,6 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
             if !stale.isEmpty { c.removeDeliveredNotifications(withIdentifiers: stale) }
         }
         c.setNotificationCategories([
-            UNNotificationCategory(identifier: Self.callStarted, actions: [
-                UNNotificationAction(identifier: "record", title: "Record", options: []),
-                UNNotificationAction(identifier: "dismiss", title: "Not now", options: []),
-            ], intentIdentifiers: []),
             UNNotificationCategory(identifier: Self.callEnded, actions: [
                 UNNotificationAction(identifier: "stop", title: "Stop and write notes", options: []),
                 UNNotificationAction(identifier: "dismiss", title: "Keep recording", options: []),
@@ -217,8 +232,6 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
         await MainActor.run {
             let r = JotterApp.recorder
             switch (category, action) {
-            case (Notifier.callStarted, "record"), (Notifier.callStarted, UNNotificationDefaultActionIdentifier):
-                if !r.isRecording { r.start(.meeting); CallWatcher.shared.recordingStartedFromPrompt() }
             case (Notifier.callEnded, "stop"), (Notifier.callEnded, UNNotificationDefaultActionIdentifier):
                 if r.isRecording { r.stop() }
             case (Notifier.update, _) where action != UNNotificationDismissActionIdentifier:

@@ -258,7 +258,8 @@ enum MeetingNotes {
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         // Keep JJ's own notes if the note is being written again.
         let old = (info["note"] as? String).map { URL(fileURLWithPath: $0) }
-        let mine = old.flatMap { try? String(contentsOf: $0, encoding: .utf8) }.flatMap(myNotes) ?? ""
+        let oldText = old.flatMap { try? String(contentsOf: $0, encoding: .utf8) }
+        let mine = oldText.flatMap(myNotes) ?? ""
         let note = dir.appendingPathComponent("\(name).md")
         let transcript = dir.appendingPathComponent("\(name) transcript.md")
         if let old, old != note {
@@ -267,7 +268,9 @@ enum MeetingNotes {
         }
         try? FileManager.default.removeItem(at: transcript)
         try FileManager.default.copyItem(at: rec.appendingPathComponent("transcript.md"), to: transcript)
-        try render(notes: notes, project: project, started: started, recording: rec, transcriptName: transcript.deletingPathExtension().lastPathComponent, mine: mine, info: info)
+        let fresh = render(notes: notes, project: project, started: started, recording: rec, transcriptName: transcript.deletingPathExtension().lastPathComponent, mine: mine, info: info)
+        // Items ticked off in a call brief stay ticked when the note is written again or moved.
+        try (oldText.map { Brief.carryTicks(from: $0, into: fresh) } ?? fresh)
             .write(to: note, atomically: true, encoding: .utf8)
         return note
     }

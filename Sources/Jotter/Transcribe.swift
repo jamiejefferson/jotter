@@ -70,11 +70,16 @@ enum Transcribe {
         for (file, who) in [("mic.m4a", "You"), ("call.m4a", "Call")] {
             let url = folder.appendingPathComponent(file)
             guard FileManager.default.fileExists(atPath: url.path) else { continue }
+            // A meeting in a room plays nothing through the Mac, so its call track is empty.
+            // The speech engine never finishes on an empty file, so that track is left out.
+            guard let audio = try? AVAudioFile(forReading: url), audio.length > 0 else {
+                print("\(who): no audio, skipped")
+                continue
+            }
+            let length = Double(audio.length) / audio.processingFormat.sampleRate
             let t0 = Date()
             let got = try await transcribeFile(url, who: who, locale: locale)
             let seconds = Date().timeIntervalSince(t0)
-            let audio = try AVAudioFile(forReading: url)
-            let length = Double(audio.length) / audio.processingFormat.sampleRate
             timings.append("\(who): \(Int(length.rounded())) s of audio in \(String(format: "%.1f", seconds)) s")
             print("\(who): \(got.count) segments, \(String(format: "%.1f", seconds)) s")
             let shift = offsets[who] ?? 0

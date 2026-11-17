@@ -12,5 +12,5 @@ ditto -c -k --keepParent "$OUT/Jotter.app" "$OUT/Jotter.zip"
 mkdir -p dist.nosync && cp "$OUT/Jotter.zip" dist.nosync/Jotter.zip
 echo "Built dist.nosync/Jotter.zip for $VERSION"
 if [[ "${1:-}" != "--no-publish" ]]; then
-    gh release create "v$VERSION" dist.nosync/Jotter.zip install.sh --title "Jotter $VERSION" --notes "${NOTES:-Jotter $VERSION}" --latest
+    gh release create "v$VERSION" dist.nosync/Jotter.zip install.sh --repo jamiejefferson/jotter --title "Jotter $VERSION" --notes "${NOTES:-Jotter $VERSION}" --latest
 fi

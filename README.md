@@ -25,7 +25,8 @@ Jotter appears as an icon in the menu bar. It checks for new versions every few 
 - **Dictate:** hold right ⌘, speak, let go. The words are pasted where you were typing. Hold Shift too to say a correction, such as "change Thursday to Friday" or "scratch that".
 - **Meeting:** double-tap right ⌘ to start and stop (or ⌃⌥⌘J). A small bar shows the time, a project menu, Pause (⌃⌥⌘P) and Stop. When you stop, the bar shows progress and then "Notes ready" with a View button.
 - **Voice note:** ⌃⌥⌘N records your mic only.
-- **Call prompt:** when Teams, Zoom, FaceTime or a browser call has used the microphone for 15 seconds and Jotter isn't recording, a notification asks "Jot notes for this meeting?". Click it (or Record) to start. If you're recording and the call app lets go of the microphone for 45 seconds, a second notification offers to stop and write the notes. Dictation apps, Voice Memos and Granola don't trigger it. Turn it off in Settings › General.
+- **Call prompt:** a card asks "Jot notes for this meeting?" three minutes before a calendar meeting that has other people or a call link, or when Teams, Zoom, FaceTime or a browser call has used the microphone for 15 seconds. It names the project matched from the invite, which you can change, and says how many questions and actions earlier notes left open. "Record now" starts; "Start at 14:00" shrinks the card to a small bar and records by itself at that time. If you're recording and the call app lets go of the microphone for 45 seconds, a notification offers to stop and write the notes. Dictation apps, Voice Memos and Granola don't trigger it. Turn it off in Settings › General.
+- **Call brief:** with a project chosen, the recording bar shows how many questions and actions that project's earlier notes left open. Click the number to open the brief: a short briefing for today, then the open questions and the actions to chase. Tick one off as the call covers it and it is ticked in the note it came from, so it doesn't come back. A recording started by hand takes the project from the invite in progress, or the bar asks you to choose one. The open brief is left out of your screen share unless you switch on "Visible when sharing".
 - **Meetings window:** every meeting with its notes and transcript. "Filed in" moves a note to another project folder, or makes a new one.
 - The key can be changed in Settings (right ⌘, right ⌥, right ⌃ or Fn).
 
@@ -84,7 +85,9 @@ $B --show-meetings | --show-settings | --show-feedback
 | `MeetingNotes.swift` | Notes prompt, model call, filing and new projects. |
 | `Dictation.swift` | Hold-to-dictate, tidying, spoken corrections, name fixes. |
 | `Updater.swift` | Checks GitHub releases, notifies, and installs updates in place. |
-| `CallWatcher.swift` | Notices a call app using the microphone and offers to start or stop a recording; owns all Jotter notifications and their buttons. |
+| `CallWatcher.swift` | Notices a calendar meeting about to start or a call app using the microphone and offers to start or stop a recording; owns Jotter's notifications. |
+| `PromptCard.swift` | The "Jot notes for this meeting?" card, its waiting bar, and today's calendar. |
+| `Brief.swift` | The call brief: reads a project's earlier notes, writes ticks back, matches invites to projects, writes the briefing. |
 | `ModelAccess.swift` | OpenRouter (or KeyBus) connection and key files. |
 | `Profile.swift` | Per-person settings: name, notes folder, calendar. |
 | `WorkCalendar.swift` | Optional match to a calendar invite through the Composio CLI. |

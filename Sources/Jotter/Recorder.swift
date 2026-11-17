@@ -89,7 +89,16 @@ final class Recorder: ObservableObject {
     @Published private(set) var last: Saved?
     @Published private(set) var paused = false
     /// The vault project this recording belongs to, or "" to let the notes model decide.
-    @Published var project = ""
+    @Published var project = "" {
+        didSet {
+            guard project != oldValue else { return }
+            brief.load(project: project, inviteTitle: invite?.title ?? "", inviteAbout: invite?.description ?? "")
+        }
+    }
+    /// What the project's earlier notes left open, shown beside the recording.
+    let brief = BriefModel()
+    /// The calendar invite this recording was matched to when it started, if any.
+    private var invite: WorkCalendar.Event?
     /// Vault projects, read when a recording starts.
     @Published private(set) var projects: [String] = []
     @Published var openAtLogin = SMAppService.mainApp.status == .enabled {
@@ -116,7 +125,9 @@ final class Recorder: ObservableObject {
 
     var isRecording: Bool { kind != nil }
 
-    init() {
+    /// `preview` builds a recorder that only drives the views: no hot keys, no recovery.
+    init(preview: Bool = false) {
+        if preview { brief.preview = true; return }
         hotKey = HotKey(keyCode: UInt32(kVK_ANSI_N), modifiers: UInt32(controlKey | optionKey | cmdKey)) { [weak self] in
             Task { @MainActor in self?.hotKeyPressed() }
         }
@@ -161,16 +172,18 @@ final class Recorder: ObservableObject {
         }
     }
 
-    func start(_ kind: Kind) {
+    /// `project` is the choice made on the prompt card. Without one, a meeting takes the
+    /// project matched from the invite in progress, and the bar asks if there is none.
+    func start(_ kind: Kind, project: String? = nil) {
         guard !isRecording, !saving else { return }
         message = nil
         switch AVCaptureDevice.authorizationStatus(for: .audio) {
         case .authorized:
-            begin(kind)
+            begin(kind, project: project)
         case .notDetermined:
             AVCaptureDevice.requestAccess(for: .audio) { granted in
                 Task { @MainActor in
-                    if granted { self.begin(kind) } else { self.micBlocked = true }
+                    if granted { self.begin(kind, project: project) } else { self.micBlocked = true }
                 }
             }
         default:
@@ -178,7 +191,7 @@ final class Recorder: ObservableObject {
         }
     }
 
-    private func begin(_ kind: Kind) {
+    private func begin(_ kind: Kind, project chosen: String? = nil) {
         micBlocked = false
         let now = Date()
         let folder = Store.recordings.appendingPathComponent("\(Store.stamp(now))-\(kind.rawValue)", isDirectory: true)
@@ -208,8 +221,14 @@ final class Recorder: ObservableObject {
         elapsed = 0
         callHeard = false
         label = ""
+        invite = nil
         project = ""
         projects = Projects.list()
+        if kind == .meeting {
+            let claim = PromptCard.shared.claimProject(at: now)
+            invite = claim.event
+            project = chosen.flatMap { $0.isEmpty ? nil : $0 } ?? claim.project
+        }
         pauses = []
         pausedAt = nil
         paused = false
@@ -241,6 +260,7 @@ final class Recorder: ObservableObject {
         if let pausedAt { pauses.append((pausedAt.timeIntervalSince(startedAt), Date().timeIntervalSince(startedAt))) }
         let pauses = self.pauses.map { ["from": $0.from.rounded(), "to": $0.to.rounded()] }
         let project = self.project
+        brief.open = false
         pausedAt = nil
         paused = false
         // A meeting keeps the bar, which follows the notes through to "ready".
@@ -398,6 +418,19 @@ final class Recorder: ObservableObject {
 
     func openAudioCaptureSettings() {
         NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_AudioCapture")!)
+    }
+
+    /// Puts the bar on screen as if a meeting were recording, for checking the views.
+    func previewRecording(project: String, open: Bool) {
+        kind = .meeting
+        startedAt = Date().addingTimeInterval(-761)
+        elapsed = 761
+        projects = Projects.list()
+        self.project = project
+        brief.visibleWhenSharing = true
+        brief.open = open
+        if hud == nil { hud = RecordingHUD(recorder: self) }
+        hud?.show()
     }
 
     static func clock(_ t: TimeInterval) -> String {
