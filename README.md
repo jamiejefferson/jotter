@@ -93,3 +93,7 @@ $B --show-meetings | --show-settings | --show-feedback
 | `WorkCalendar.swift` | Optional match to a calendar invite through the Composio CLI. |
 | `JotterApp.swift`, `RecordingHUD.swift`, `MeetingsWindow.swift`, `SettingsWindow.swift`, `ConnectionView.swift`, `Theme.swift` | Interface, in the Canon and Indy visual language. |
 | `SelfTest.swift` | Command-line checks. |
+
+## Licence
+
+MIT. See `LICENSE`.
